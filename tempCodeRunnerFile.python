@@ -1,0 +1,203 @@
+# %%
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout, Input
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+import matplotlib.pyplot as plt
+
+# %%
+# Load the dataset
+try:
+    data = pd.read_csv("dataset1.csv")
+except FileNotFoundError:
+    print("Error: 'dataset1.csv' not found. Please ensure the file is in the correct directory.")
+    exit()
+
+# Display basic information about the dataset
+print("First 5 rows of the dataset:")
+print(data.head())
+print("\nDataset Information:")
+data.info()
+print("\nDescriptive Statistics:")
+print(data.describe())
+print("\nMissing values per column:")
+print(data.isnull().sum())
+
+# Handle potential missing values
+for column in data.columns:
+    if data[column].isnull().any():
+        if pd.api.types.is_numeric_dtype(data[column]):
+            print(f"Filling missing values in numeric column '{column}' with its mean.")
+            data[column] = data[column].fillna(data[column].mean())
+        else: 
+            print(f"Filling missing values in categorical column '{column}' with its mode.")
+            data[column] = data[column].fillna(data[column].mode()[0])
+
+
+# %%
+# Define features (X) and target (y)
+if "Output" not in data.columns:
+    print("Error: 'Output' column not found in the dataset. Please specify the correct target column.")
+    exit()
+
+X = data.drop("Output", axis=1)
+y = data["Output"]
+
+# Encode target labels
+label_encoder = LabelEncoder()
+y_encoded = label_encoder.fit_transform(y)
+num_classes = len(label_encoder.classes_)
+
+print(f"\nOriginal unique classes in 'Output': {np.unique(y)}")
+print(f"Encoded unique classes in 'Output': {np.unique(y_encoded)}")
+print(f"Number of unique classes: {num_classes}")
+
+if num_classes <= 1:
+    print("Error: The target variable 'Output' has only one class or is not suitable for classification after encoding.")
+    exit()
+
+
+# %%
+# Split data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y_encoded,
+    test_size=0.2,
+    random_state=42,
+    stratify=y_encoded if num_classes > 1 else None
+)
+
+print(f"\nShape of X_train: {X_train.shape}")
+print(f"Shape of X_test: {X_test.shape}")
+print(f"Shape of y_train: {y_train.shape}")
+print(f"Shape of y_test: {y_test.shape}")
+
+# %%
+# Scale numerical features
+numerical_cols = X_train.select_dtypes(include=np.number).columns
+non_numerical_cols = X_train.select_dtypes(exclude=np.number).columns
+
+if len(non_numerical_cols) > 0:
+    print(f"Warning: Non-numerical columns found in features: {list(non_numerical_cols)}. These will not be scaled by StandardScaler.")
+    # Future step: Add one-hot encoding or other appropriate preprocessing for these non_numerical_cols if they exist
+
+scaler = StandardScaler()
+
+X_train_scaled = X_train.copy()
+X_test_scaled = X_test.copy()
+
+if len(numerical_cols) > 0:
+    X_train_scaled[numerical_cols] = scaler.fit_transform(X_train[numerical_cols])
+    X_test_scaled[numerical_cols] = scaler.transform(X_test[numerical_cols])
+else:
+    print("No numerical columns found to scale.")
+
+
+# %%
+# Define the improved model
+model = Sequential(name="Soil_Fertility_Prediction_Model")
+model.add(Input(shape=(X_train_scaled.shape[1],), name="Input_Layer"))
+model.add(Dense(units=128, activation='relu', kernel_initializer='he_normal', name="Hidden_Layer_1"))
+model.add(Dropout(0.4, name="Dropout_1"))
+model.add(Dense(units=64, activation='relu', kernel_initializer='he_normal', name="Hidden_Layer_2"))
+model.add(Dropout(0.3, name="Dropout_2"))
+model.add(Dense(units=32, activation='relu', kernel_initializer='he_normal', name="Hidden_Layer_3"))
+model.add(Dense(units=num_classes, activation='softmax', name="Output_Layer"))
+
+# %%
+# Compile the model
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.0005)
+model.compile(optimizer=optimizer,
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+model.summary()
+
+# %%
+# Define callbacks for training
+early_stopping = EarlyStopping(
+    monitor='val_loss',
+    patience=20,
+    restore_best_weights=True,
+    verbose=1
+)
+
+reduce_lr = ReduceLROnPlateau(
+    monitor='val_loss',
+    factor=0.2,
+    patience=8,
+    min_lr=0.00001,
+    verbose=1
+)
+
+# %%
+# Train the model
+print("\nStarting model training...")
+history = model.fit(
+    X_train_scaled, y_train,
+    validation_data=(X_test_scaled, y_test),
+    epochs=200,
+    batch_size=32,
+    callbacks=[early_stopping, reduce_lr],
+    verbose=1
+)
+
+# %%
+# Evaluate the model on the test set
+print("\nEvaluating model on the test set...")
+loss, accuracy = model.evaluate(X_test_scaled, y_test, verbose=0)
+print(f"\nTest Loss: {loss:.4f}")
+print(f"Test Accuracy: {accuracy * 100:.2f}%")
+
+# %%
+# Plot training history
+def plot_history(history_obj):
+    plt.figure(figsize=(14, 6))
+
+    plt.subplot(1, 2, 1)
+    plt.plot(history_obj.history['accuracy'], label='Train Accuracy', color='dodgerblue', linewidth=2)
+    plt.plot(history_obj.history['val_accuracy'], label='Validation Accuracy', color='tomato', linestyle='--', linewidth=2)
+    plt.title('Model Accuracy Over Epochs', fontsize=16)
+    plt.xlabel('Epochs', fontsize=14)
+    plt.ylabel('Accuracy', fontsize=14)
+    plt.legend(fontsize=12)
+    plt.grid(True, linestyle=':', alpha=0.7)
+    min_acc = 0
+    if 'accuracy' in history_obj.history and 'val_accuracy' in history_obj.history:
+        if history_obj.history['accuracy'] and history_obj.history['val_accuracy']: # Check if lists are not empty
+             min_acc = min(min(history_obj.history['accuracy']), min(history_obj.history['val_accuracy']))
+    plt.ylim([max(0, min_acc - 0.05), 1.01])
+
+
+    plt.subplot(1, 2, 2)
+    plt.plot(history_obj.history['loss'], label='Train Loss', color='dodgerblue', linewidth=2)
+    plt.plot(history_obj.history['val_loss'], label='Validation Loss', color='tomato', linestyle='--', linewidth=2)
+    plt.title('Model Loss Over Epochs', fontsize=16)
+    plt.xlabel('Epochs', fontsize=14)
+    plt.ylabel('Loss', fontsize=14)
+    plt.legend(fontsize=12)
+    plt.grid(True, linestyle=':', alpha=0.7)
+    max_loss_val = 1.0 # Default max
+    min_loss_val = 0.0 # Default min
+    if 'loss' in history_obj.history and 'val_loss' in history_obj.history:
+        if history_obj.history['loss'] and history_obj.history['val_loss']: # Check if lists are not empty
+            max_loss_val = max(max(history_obj.history['loss']), max(history_obj.history['val_loss']))
+            min_loss_val = min(min(history_obj.history['loss']), min(history_obj.history['val_loss']))
+    plt.ylim([max(0, min_loss_val - 0.1*abs(min_loss_val)) , min(max_loss_val * 1.1, max_loss_val + 0.5)])
+
+
+    plt.tight_layout()
+    plt.show()
+
+plot_history(history)
+
+print("\n--- Script Execution Finished ---")
+print("Review the plots and Test Accuracy. The model includes several enhancements for better performance and robustness.")
+print("Potential next steps for further improvement:")
+print("1. Feature Engineering: Create new meaningful features from existing ones.")
+print("2. Advanced Imputation: Use more sophisticated methods for missing data if present.")
+print("3. Hyperparameter Tuning: Systematically tune learning rate, batch size, number of layers/neurons, dropout rates using tools like KerasTuner or Optuna.")
+print("4. Cross-Validation: Implement k-fold cross-validation for more robust evaluation, especially with smaller datasets.")
+print("5. Different Architectures: Experiment with other types of neural network layers if appropriate for your data (e.g., Convolutional, Recurrent).")
