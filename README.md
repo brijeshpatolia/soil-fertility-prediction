@@ -1,3 +1,21 @@
+
+# Soil_fertility_prediction_app link
+
+https://drive.google.com/file/d/1LKBbzqC0enUVNFBZQ0cXgju1lFa5WwnR/view?usp=sharing
+
+
+# presentation video 
+
+https://drive.google.com/drive/folders/1dcfx3-Lp_Sytu_vzCgTeBPGDrzYMkEIR?usp=sharing
+
+
+# report of this project 
+
+https://www.overleaf.com/4883321188zmkxgvfbndck#572e19
+
+
+
+
 # Soil Fertility Prediction Project
 
 This project aims to predict soil fertility based on various chemical and physical properties of the soil. It includes a machine learning model trained to classify soil fertility, a Flask API to serve predictions, and an Android application to interact with the API and display results.
